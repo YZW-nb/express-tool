@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh" class="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>📦 忘了写敕令 · 极速查件助手</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3498db',
+                        dark: '#1a1a1a'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { transition: background-color 0.3s; }
+        .trace-item { @apply text-sm py-1 border-l-4 pl-2 my-1; }
+        .status-delivered { color: #27ae60; border-left-color: #27ae60; }
+        .status-transit { color: #f39c12; border-left-color: #f39c12; }
+        .history-btn { @apply text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded mr-1 mb-1 cursor-pointer; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+    <div class="container mx-auto px-4 py-8 max-w-3xl">
+        <!-- 标题区 -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-primary">📦 极速查件助手</h1>
+            <p class="text-lg text-gray-600 mt-2">输入单号，秒级返回物流轨迹</p>
+            <p class="text-sm text-gray-500 mt-1">开发者：忘了写敕令｜微信：y2665439462</p>
+        </div>
+
+        <!-- 查询输入区 -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-6 transition-all">
+            <label for="tracking-number" class="block text-sm font-medium text-gray-700 mb-2">快递单号</label>
+            <div class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="tracking-number" 
+                    placeholder="请输入快递单号，如 JT5465288199725" 
+                    class="flex-grow px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button 
+                    onclick="queryTracking()" 
+                    class="px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 transition">🔍 查询</button>
+            </div>
+        </div>
+
+        <!-- 结果显示区 -->
+        <div id="result" class="hidden bg-white p-6 rounded-xl shadow-md transition-all">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-8 8m12-8v4m0 0H3" />
+                </svg>
+                物流轨迹
+            </h2>
+            <div id="result-content" class="space-y-3 text-sm">
+                <!-- 动态内容插入 -->
+            </div>
+        </div>
+
+        <!-- 历史记录面板 -->
+        <div class="mt-6 bg-white p-4 rounded-xl shadow-sm">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">📌 最近查询</h3>
+            <div id="history-list" class="flex flex-wrap">
+                <!-- 历史按钮将插入这里 -->
+            </div>
+        </div>
+
+        <!-- 底部信息 -->
+        <div class="mt-8 text-center text-xs text-gray-500">
+            <p>© 2026 忘了写敕令出品｜专业查件工具</p>
+            <p class="mt-1">技术支持：kuaidi100 API</p>
+        </div>
+    </div>
+
+    <!-- 主要逻辑 -->
+    <script>
+        // 历史记录存储
+        let history = JSON.parse(localStorage.getItem('queryHistory')) || [];
+
+        // 更新历史列表
+        function updateHistoryList() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            history.slice(-10).reverse().forEach(item => {
+                const btn = document.createElement('span');
+                btn.className = 'history-btn';
+                btn.textContent = item.number;
+                btn.onclick = () => {
+                    document.getElementById('tracking-number').value = item.number;
+                    queryTracking();
+                };
+                list.appendChild(btn);
+            });
+        }
+        updateHistoryList();
+
+        // 查询函数
+        async function queryTracking() {
+            const number = document.getElementById('tracking-number').value.trim();
+            const resultDiv = document.getElementById('result');
+            const content = document.getElementById('result-content');
+
+            if (!number) {
+                alert('请输入快递单号！');
+                return;
+            }
+
+            // 显示加载状态
+            resultDiv.classList.remove('hidden');
+            content.innerHTML = '<p class="text-blue-500">🔍 正在查询，请稍候...</p>';
+
+            try {
+                const res = await fetch('/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const { company, number, state, history: traces } = data.data;
+                    const statusText = state === '3' ? '✅ 已签收' : '🟡 运输中';
+                    const companyNameMap = {
+                        'jtexpress': '极兔速递',
+                        'shunfeng': '顺丰速运',
+                        'yuantong': '圆通速递',
+                        'shentong': '申通快递',
+                        'zhongtong': '中通快递',
+                        'yunda': '韵达快递',
+                        'ems': '邮政EMS'
+                    };
+                    const showName = companyNameMap[company] || company.toUpperCase();
+
+                    // 生成轨迹 HTML
+                    let traceHTML = `\n<div class="font-medium mb-2">物流公司：<strong>${showName}</strong></div>\n`;
+                    traceHTML += `<div>运单编号：<code class="bg-gray-100 px-1 rounded">${number}</code> <button onclick="copyToClipboard('${number}')" class="ml-2 text-xs text-blue-500 hover:text-blue-700">📋 复制</button></div>\n`;
+                    traceHTML += `<div class="mt-3 font-medium">当前状态：<span class="${state === '3' ? 'text-green-600' : 'text-orange-600'}">${statusText}</span></div>`;
+                    traceHTML += '<div class="mt-4 space-y-1">';
+                    traces.forEach(t => {
+                        traceHTML += `<div class="trace-item ${state === '3' ? 'status-delivered' : 'status-transit'}">
+                            <span class="time">[${t.time}]</span> 
+                            <span class="context">${t.context}</span>
+                        </div>`;
+                    });
+                    traceHTML += '</div>';
+
+                    content.innerHTML = traceHTML;
+
+                    // 保存到历史
+                    if (!history.some(h => h.number === number)) {
+                        history.push({ number, company: showName, time: new Date().toLocaleString() });
+                        localStorage.setItem('queryHistory', JSON.stringify(history));
+                        updateHistoryList();
+                    }
+                } else {
+                    content.innerHTML = `<p class="text-red-500">❌ 查询失败：${data.message}</p>`;
+                }
+            } catch (err) {
+                content.innerHTML = `<p class="text-red-500">⚠️ 网络错误，请检查连接</p>`;
+            }
+        }
+
+        // 一键复制
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('已复制到剪贴板！');
+            }).catch(err => {
+                console.error('Copy failed:', err);
+            });
+        }
+
+        // 页面加载时尝试自动查询（用于回传）
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const auto = params.get('q');
+            if (auto) {
+                document.getElementById('tracking-number').value = auto;
+                queryTracking();
+            }
+        });
+    </script>
+</body>
+</html>
